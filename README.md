@@ -1,0 +1,2 @@
+# LaSTy_Language_Smart_Trainer
+LangChain project
