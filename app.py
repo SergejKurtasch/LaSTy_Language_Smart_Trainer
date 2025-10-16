@@ -6,15 +6,53 @@ import pandas as pd
 from datetime import datetime
 import io
 from typing import List, Dict
+import logging
 
 # Import our modules
 from database import DatabaseManager
 from ai_service import AIService
-from language_validator import LanguageValidator
 from training_engine import TrainingEngine
 from config import (
     SUPPORTED_LANGUAGES, PREFERRED_TOPICS, TRAINING_SESSION_LIMITS,
-    IMPORT_ERROR_THRESHOLD, MAX_WORDS_PER_IMPORT
+    IMPORT_ERROR_THRESHOLD, MAX_WORDS_PER_IMPORT, INTERFACE_LANGUAGES
+)
+from translations import (
+    get_translation, get_user_language_index, LANGUAGE_INDICES,
+    app_title, welcome_message, tab_dashboard, tab_words, tab_training, tab_statistics, tab_settings,
+    login_tab, register_tab, username_label, password_label, confirm_password_label,
+    login_button, register_button, native_language_label, learning_languages_label,
+    preferred_topics_label, error_required_fields, error_passwords_match,
+    error_select_language, error_invalid_credentials, error_registration_failed,
+    success_login, success_registration, sidebar_welcome, sidebar_native,
+    sidebar_learning, logout_button, words_management_title, import_words_title,
+    your_words_title, import_instructions, target_language_label, file_format_info,
+    column_order_label, column_order_option1, column_order_option2, choose_file_label,
+    import_button, continue_import_button, training_title, select_language_label,
+    words_per_session_label, start_training_button, task_progress, of_label,
+    progress_label, submit_answer_button, next_word_button, finish_training_button,
+    cancel_session_button, statistics_title, total_words_label, ready_for_training_label,
+    recent_activity_label, completion_rate_label, progress_distribution_label,
+    common_errors_label, no_errors_message, correct_answer, almost_correct,
+    good_synonym, incorrect_answer, explanation_label, new_progress_label,
+    no_words_found, training_completed, validation_results, valid_pairs,
+    invalid_pairs, error_rate, your_answer_label, sentence_label, context_label,
+    choose_correct_answer, fill_blank_label, please_enter_answer, correct_translation,
+    choose_english_translation, correct_good_job, auto_detection_enabled,
+    analyzing_languages, languages_detected, left_column_native, right_column_target,
+    cleaned_words_preview, detection_failed, check_file_content,
+    settings_title, learning_languages_settings, preferred_topics_settings,
+    interface_language_settings, save_settings_button, settings_saved_success,
+    settings_save_error
+)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('lasty_language_detection.log'),
+        logging.StreamHandler()
+    ]
 )
 
 # Page configuration
@@ -93,63 +131,75 @@ def get_services():
     try:
         db = DatabaseManager()
         ai = AIService()
-        validator = LanguageValidator()
         training_engine = TrainingEngine(db, ai)
-        return db, ai, validator, training_engine
+        return db, ai, training_engine
     except Exception as e:
         st.error(f"Failed to initialize services: {e}")
-        return None, None, None, None
+        return None, None, None
 
-db, ai, validator, training_engine = get_services()
+db, ai, training_engine = get_services()
+
+def get_user_interface_language():
+    """Получить язык интерфейса для текущего пользователя"""
+    if st.session_state.user_data and 'interface_language' in st.session_state.user_data:
+        return get_user_language_index(st.session_state.user_data['interface_language'])
+    return 0  # По умолчанию английский
 
 def login_page():
     """Display login/registration page"""
-    st.title("🧠 Lasty: Language Smart Trainer")
-    st.markdown("### Welcome to your personalized language learning experience!")
+    # Для страницы входа используем английский по умолчанию
+    lang_idx = 0
     
-    tab1, tab2 = st.tabs(["Login", "Register"])
+    st.title(f"🧠 {get_translation(app_title, lang_idx)}")
+    st.markdown(f"### {get_translation(welcome_message, lang_idx)}")
+    
+    tab1, tab2 = st.tabs([get_translation(login_tab, lang_idx), get_translation(register_tab, lang_idx)])
     
     with tab1:
-        st.subheader("Login")
+        st.subheader(get_translation(login_tab, lang_idx))
         with st.form("login_form"):
-            login = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-            submit = st.form_submit_button("Login")
+            login = st.text_input(get_translation(username_label, lang_idx))
+            password = st.text_input(get_translation(password_label, lang_idx), type="password")
+            submit = st.form_submit_button(get_translation(login_button, lang_idx))
             
             if submit:
                 if not login or not password:
-                    st.error("Please enter both username and password")
+                    st.error(get_translation(error_required_fields, lang_idx))
                 else:
                     user = db.authenticate_user(login, password)
                     if user:
                         st.session_state.authenticated = True
                         st.session_state.user_id = user["user_id"]
                         st.session_state.user_data = user
-                        st.success("Login successful!")
+                        st.success(get_translation(success_login, lang_idx))
                         st.rerun()
                     else:
-                        st.error("Invalid username or password")
+                        st.error(get_translation(error_invalid_credentials, lang_idx))
     
     with tab2:
-        st.subheader("Register")
+        st.subheader(get_translation(register_tab, lang_idx))
         with st.form("register_form"):
-            new_login = st.text_input("Username")
-            new_password = st.text_input("Password", type="password")
-            confirm_password = st.text_input("Confirm Password", type="password")
+            new_login = st.text_input(get_translation(username_label, lang_idx))
+            new_password = st.text_input(get_translation(password_label, lang_idx), type="password")
+            confirm_password = st.text_input(get_translation(confirm_password_label, lang_idx), type="password")
             
-            native_lang = st.selectbox("Native Language", list(SUPPORTED_LANGUAGES.keys()))
-            learning_langs = st.multiselect("Languages to Learn", list(SUPPORTED_LANGUAGES.keys()))
-            topics = st.multiselect("Preferred Topics", PREFERRED_TOPICS)
+            native_lang = st.selectbox(get_translation(native_language_label, lang_idx), list(SUPPORTED_LANGUAGES.keys()))
+            learning_langs = st.multiselect(get_translation(learning_languages_label, lang_idx), list(SUPPORTED_LANGUAGES.keys()))
+            topics = st.multiselect(get_translation(preferred_topics_label, lang_idx), PREFERRED_TOPICS)
             
-            submit_reg = st.form_submit_button("Register")
+            # Добавляем выбор языка интерфейса
+            interface_lang = st.selectbox("Interface Language", list(INTERFACE_LANGUAGES.keys()), 
+                                        help="Choose the language for the user interface")
+            
+            submit_reg = st.form_submit_button(get_translation(register_button, lang_idx))
             
             if submit_reg:
                 if not new_login or not new_password:
-                    st.error("Please fill in all required fields")
+                    st.error(get_translation(error_required_fields, lang_idx))
                 elif new_password != confirm_password:
-                    st.error("Passwords do not match")
+                    st.error(get_translation(error_passwords_match, lang_idx))
                 elif not learning_langs:
-                    st.error("Please select at least one language to learn")
+                    st.error(get_translation(error_select_language, lang_idx))
                 else:
                     try:
                         user_id = db.create_user(
@@ -157,25 +207,29 @@ def login_page():
                             password=new_password,
                             native_language=native_lang,
                             learning_languages=learning_langs,
-                            preferred_topics=topics
+                            preferred_topics=topics,
+                            interface_language=interface_lang
                         )
-                        st.success("Registration successful! Please login.")
+                        st.success(get_translation(success_registration, lang_idx))
                     except Exception as e:
-                        st.error(f"Registration failed: {e}")
+                        st.error(f"{get_translation(error_registration_failed, lang_idx)}: {e}")
 
 def dashboard():
     """Display main dashboard"""
+    # Получаем язык интерфейса пользователя
+    lang_idx = get_user_interface_language()
+    
     st.title("Lasty")
-    st.markdown("### Language Smart Trainer")
+    st.markdown(f"### {get_translation(app_title, lang_idx)}")
     
     # User info sidebar
     with st.sidebar:
-        st.write(f"Welcome, {st.session_state.user_data['login']}!")
-        st.write(f"Native: {st.session_state.user_data['native_language']}")
-        st.write(f"Learning: {', '.join(st.session_state.user_data['learning_languages'])}")
+        st.write(f"{get_translation(sidebar_welcome, lang_idx)}, {st.session_state.user_data['login']}!")
+        st.write(f"{get_translation(sidebar_native, lang_idx)}: {st.session_state.user_data['native_language']}")
+        st.write(f"{get_translation(sidebar_learning, lang_idx)}: {', '.join(st.session_state.user_data['learning_languages'])}")
         
         
-        if st.button("Logout"):
+        if st.button(get_translation(logout_button, lang_idx)):
             st.session_state.authenticated = False
             st.session_state.user_id = None
             st.session_state.user_data = None
@@ -183,7 +237,13 @@ def dashboard():
             st.rerun()
     
     # Main content tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["🏠 Dashboard", "📚 Words", "🎯 Training", "📊 Statistics"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        get_translation(tab_dashboard, lang_idx), 
+        get_translation(tab_words, lang_idx), 
+        get_translation(tab_training, lang_idx), 
+        get_translation(tab_statistics, lang_idx),
+        get_translation(tab_settings, lang_idx)
+    ])
     
     with tab1:
         dashboard_content()
@@ -196,6 +256,9 @@ def dashboard():
     
     with tab4:
         statistics_page()
+    
+    with tab5:
+        settings_page()
 
 def dashboard_content():
     """Display dashboard content"""
@@ -253,22 +316,26 @@ def dashboard_content():
 
 def words_management():
     """Display words management interface"""
-    st.subheader("📚 Word Management")
+    lang_idx = get_user_interface_language()
+    st.subheader(get_translation(words_management_title, lang_idx))
     
     # Import words section
-    with st.expander("📥 Import Words", expanded=True):
-        st.write("Upload a CSV or TXT file with word pairs (native language, target language)")
+    with st.expander(get_translation(import_words_title, lang_idx), expanded=True):
+        st.write(get_translation(import_instructions, lang_idx))
         
         # Language selection
         col1, col2 = st.columns(2)
         with col1:
-            target_language = st.selectbox("Target Language", st.session_state.user_data['learning_languages'])
+            target_language = st.selectbox(get_translation(target_language_label, lang_idx), st.session_state.user_data['learning_languages'])
         
         with col2:
-            st.write("File format: CSV or TXT, 2 columns, no header")
+            st.write(get_translation(file_format_info, lang_idx))
+            
+        # Automatic language detection is always enabled
+        st.info(get_translation(auto_detection_enabled, lang_idx))
         
         # File upload
-        uploaded_file = st.file_uploader("Choose file", type=['csv', 'txt'])
+        uploaded_file = st.file_uploader(get_translation(choose_file_label, lang_idx), type=['csv', 'txt'])
         
         if uploaded_file:
             try:
@@ -294,32 +361,63 @@ def words_management():
                         st.warning(f"File has {len(df)} words. Only first {MAX_WORDS_PER_IMPORT} will be imported.")
                         df = df.head(MAX_WORDS_PER_IMPORT)
                     
-                    # Create word pairs - first column is English, second is target language
-                    # For your file: English words -> Russian translations
-                    word_pairs = [(row[0], row[1]) for _, row in df.iterrows()]
+                    # Get user's native language for validation
+                    user_native_language = st.session_state.user_data.get('native_language', 'English')
                     
-                    # Debug: show first few word pairs
-                    st.write("**First 3 word pairs:**")
-                    for i, (native, target) in enumerate(word_pairs[:3]):
-                        st.write(f"{i+1}. {native} → {target}")
+                    # Automatic language detection (always enabled)
+                    st.info(get_translation(analyzing_languages, lang_idx))
                     
-                    # Validate words (English -> target language)
-                    validation_result = validator.validate_word_pairs(
-                        word_pairs, 
-                        "English",  # Source language is always English for this file
-                        target_language
+                    # Extract columns
+                    left_column = [str(row[0]) for _, row in df.iterrows()]
+                    right_column = [str(row[1]) for _, row in df.iterrows()]
+                    
+                    # Use AI to detect languages
+                    logging.info(f"Starting language detection for user {st.session_state.user_id}")
+                    logging.info(f"Target language: {target_language}, Native language: {user_native_language}")
+                    logging.info(f"Left column sample: {left_column[:5]}")
+                    logging.info(f"Right column sample: {right_column[:5]}")
+                    
+                    detection_result = ai.auto_detect_column_languages(
+                        left_column, right_column, target_language, user_native_language
                     )
                     
+                    logging.info(f"Detection result: {detection_result}")
+                    
+                    if detection_result['success']:
+                        # Create word pairs from detected languages
+                        word_pairs = list(zip(detection_result['native_words'], detection_result['target_words']))
+                        
+                        st.success(get_translation(languages_detected, lang_idx))
+                        st.write(get_translation(left_column_native, lang_idx).format(column=detection_result['native_column']))
+                        st.write(get_translation(right_column_target, lang_idx).format(column=detection_result['target_column']))
+                        
+                        # Show cleaned words
+                        st.write(get_translation(cleaned_words_preview, lang_idx))
+                        for i, (native, target) in enumerate(word_pairs[:3]):
+                            st.write(f"{i+1}. {native} → {target}")
+                        
+                        # Skip validation for auto-detected words (they're already cleaned)
+                        validation_result = {
+                            'valid_pairs': word_pairs,
+                            'invalid_pairs': [],
+                            'error_rate': 0.0
+                        }
+                        
+                    else:
+                        st.error(get_translation(detection_failed, lang_idx).format(error=detection_result['error']))
+                        st.write(get_translation(check_file_content, lang_idx))
+                        return
+                    
                     # Show validation results
-                    st.write(f"**Validation Results:**")
-                    st.write(f"- Valid pairs: {len(validation_result['valid_pairs'])}")
-                    st.write(f"- Invalid pairs: {len(validation_result['invalid_pairs'])}")
-                    st.write(f"- Error rate: {validation_result['error_rate']:.1%}")
+                    st.write(f"**{get_translation(validation_results, lang_idx)}:**")
+                    st.write(f"- {get_translation(valid_pairs, lang_idx)}: {len(validation_result['valid_pairs'])}")
+                    st.write(f"- {get_translation(invalid_pairs, lang_idx)}: {len(validation_result['invalid_pairs'])}")
+                    st.write(f"- {get_translation(error_rate, lang_idx)}: {validation_result['error_rate']:.1%}")
                     
                     if validation_result['error_rate'] > IMPORT_ERROR_THRESHOLD:
                         st.warning(f"Error rate ({validation_result['error_rate']:.1%}) exceeds threshold ({IMPORT_ERROR_THRESHOLD:.1%})")
                         
-                        if st.button("Continue Import"):
+                        if st.button(get_translation(continue_import_button, lang_idx)):
                             import_result = db.import_word_pairs(
                                 st.session_state.user_id, 
                                 validation_result['valid_pairs'], 
@@ -327,7 +425,7 @@ def words_management():
                             )
                             st.success(f"Imported {import_result['imported']} words successfully!")
                     else:
-                        if st.button("Import Words"):
+                        if st.button(get_translation(import_button, lang_idx)):
                             try:
                                 import_result = db.import_word_pairs(
                                     st.session_state.user_id, 
@@ -348,8 +446,8 @@ def words_management():
                 st.error(f"Error processing file: {e}")
     
     # Display existing words
-    with st.expander("📋 Your Words", expanded=True):
-        target_language = st.selectbox("Select Language", st.session_state.user_data['learning_languages'], key="words_lang")
+    with st.expander(get_translation(your_words_title, lang_idx), expanded=True):
+        target_language = st.selectbox(get_translation(select_language_label, lang_idx), st.session_state.user_data['learning_languages'], key="words_lang")
         
         if target_language:
             words = db.get_user_words(st.session_state.user_id, target_language)
@@ -367,29 +465,30 @@ def words_management():
                            words_df['Target Word'].str.contains(search_term, case=False)
                     words_df = words_df[mask]
                 
-                st.dataframe(words_df, use_container_width=True)
+                st.dataframe(words_df, width='stretch')
                 
                 # Delete word option
                 if st.button("Delete Selected Words"):
                     st.info("Word deletion feature will be implemented in the next version")
             else:
-                st.info("No words found. Import some words to get started!")
+                st.info(get_translation(no_words_found, lang_idx))
 
 def training_session():
     """Display training session interface"""
-    st.subheader("🎯 Training Session")
+    lang_idx = get_user_interface_language()
+    st.subheader(get_translation(training_title, lang_idx))
     
     if st.session_state.current_training is None:
         # Start new training session
         col1, col2 = st.columns(2)
         
         with col1:
-            target_language = st.selectbox("Select Language", st.session_state.user_data['learning_languages'])
+            target_language = st.selectbox(get_translation(select_language_label, lang_idx), st.session_state.user_data['learning_languages'])
         
         with col2:
-            session_limit = st.selectbox("Words per Session", TRAINING_SESSION_LIMITS)
+            session_limit = st.selectbox(get_translation(words_per_session_label, lang_idx), TRAINING_SESSION_LIMITS)
         
-        if st.button("Start Training Session", type="primary"):
+        if st.button(get_translation(start_training_button, lang_idx), type="primary"):
             result = training_engine.start_training_session(
                 st.session_state.user_id, 
                 target_language, 
@@ -397,8 +496,13 @@ def training_session():
             )
             
             if result['success']:
-                st.session_state.current_training = result
-                st.session_state.current_task_index = 0
+                # Store session info for lazy loading
+                st.session_state.current_training = {
+                    'session_id': result['session_id'],
+                    'current_task': result['current_task'],
+                    'current_task_index': result['current_task_index'],
+                    'total_tasks': result['total_tasks']
+                }
                 st.success(f"Training session started! {result['total_tasks']} words to practice.")
                 st.rerun()
             else:
@@ -406,48 +510,64 @@ def training_session():
     
     else:
         # Display current training task
-        current_task = st.session_state.current_training['tasks'][st.session_state.current_task_index]
+        current_task = st.session_state.current_training['current_task']
         total_tasks = st.session_state.current_training['total_tasks']
+        current_task_index = st.session_state.current_training['current_task_index']
         
-        st.write(f"**Task {st.session_state.current_task_index + 1} of {total_tasks}**")
+        # Prepare next task in background while user is thinking
+        training_engine.prepare_next_task_in_background(st.session_state.current_training['session_id'])
+        
+        st.write(f"**{get_translation(task_progress, lang_idx)} {current_task_index + 1} {get_translation(of_label, lang_idx)} {total_tasks}**")
         
         # Progress bar
-        progress = (st.session_state.current_task_index + 1) / total_tasks
+        progress = (current_task_index + 1) / total_tasks
         st.progress(progress)
         
         # Display task
         with st.container():
+            # Debug information
+            if 'debug_info' in current_task:
+                debug_info = current_task['debug_info']
+                st.info(f"🔍 **DEBUG INFO:** Тип задания: `{debug_info['task_type']}` | Метод: `{debug_info['method']}` | Прогресс: `{debug_info['progress']}%`")
+            
             st.markdown(f"### {current_task['instruction']}")
             
             if current_task['task_type'] == 'translation':
-                user_answer = st.text_input("Your answer:", key=f"answer_{current_task['task_id']}")
+                # Show sentence and context if available (same as other task types)
+                if 'sentence' in current_task and current_task['sentence']:
+                    st.write(f"**{get_translation(sentence_label, lang_idx)}** {current_task['sentence']}")
+                if 'sentence_translation' in current_task and current_task['sentence_translation']:
+                    st.write(f"**{get_translation(context_label, lang_idx)}** {current_task['sentence_translation']}")
+                
+                user_answer = st.text_input(get_translation(your_answer_label, lang_idx), key=f"answer_{current_task['task_id']}")
                 
             elif current_task['task_type'] == 'multiple_choice':
                 # Show sentence if available
                 if 'sentence' in current_task:
-                    st.write(f"**Sentence:** {current_task['sentence']}")
-                    st.write(f"**Context:** {current_task['sentence_translation']}")
+                    st.write(f"**{get_translation(sentence_label, lang_idx)}** {current_task['sentence']}")
+                    st.write(f"**{get_translation(context_label, lang_idx)}** {current_task['sentence_translation']}")
                 
                 user_answer = st.radio(
-                    "Choose the correct answer:",
+                    get_translation(choose_correct_answer, lang_idx),
                     current_task['options'],
                     key=f"answer_{current_task['task_id']}"
                 )
                 
             elif current_task['task_type'] == 'fill_blank':
-                st.write(f"**Sentence:** {current_task['sentence']}")
-                st.write(f"**Context:** {current_task['sentence_translation']}")
-                user_answer = st.text_input("Fill in the blank:", key=f"answer_{current_task['task_id']}")
+                st.write(f"**{get_translation(sentence_label, lang_idx)}** {current_task['sentence']}")
+                st.write(f"**{get_translation(context_label, lang_idx)}** {current_task['sentence_translation']}")
+                user_answer = st.text_input(get_translation(fill_blank_label, lang_idx), key=f"answer_{current_task['task_id']}")
             
             # Check if answer was already submitted
             if f"answer_submitted_{current_task['task_id']}" not in st.session_state:
                 # Submit button
-                if st.button("Submit Answer", type="primary"):
+                if st.button(get_translation(submit_answer_button, lang_idx), type="primary"):
                     if user_answer and user_answer.strip():
                         result = training_engine.submit_answer(
                             current_task['task_id'], 
                             user_answer, 
-                            st.session_state.user_id
+                            st.session_state.user_id,
+                            st.session_state.current_training['session_id']
                         )
                         
                         if result['success']:
@@ -456,7 +576,7 @@ def training_session():
                             st.session_state[f"answer_submitted_{current_task['task_id']}"] = True
                             st.rerun()
                     else:
-                        st.warning("Please enter an answer")
+                        st.warning(get_translation(please_enter_answer, lang_idx))
             else:
                 # Show result if already submitted
                 result = st.session_state[f"answer_result_{current_task['task_id']}"]
@@ -482,36 +602,44 @@ def training_session():
                     else:
                         st.error("❌ " + result.get('message', 'Incorrect!'))
                 
-                st.write(f"**Explanation:** {result['explanation']}")
-                st.write(f"**New Progress:** {result['new_progress']}%")
+                st.write(f"**{get_translation(explanation_label, lang_idx)}:** {result['explanation']}")
+                st.write(f"**{get_translation(new_progress_label, lang_idx)}:** {result['new_progress']}%")
+                
                 
                 # Next button
-                if st.session_state.current_task_index < total_tasks - 1:
-                    if st.button("Следующее слово", type="primary"):
-                        st.session_state.current_task_index += 1
-                        st.rerun()
+                if current_task_index < total_tasks - 1:
+                    if st.button(get_translation(next_word_button, lang_idx), type="primary"):
+                        # Get next task using lazy loading
+                        next_result = training_engine.get_next_task(st.session_state.current_training['session_id'])
+                        if next_result['success']:
+                            st.session_state.current_training['current_task'] = next_result['current_task']
+                            st.session_state.current_training['current_task_index'] = next_result['current_task_index']
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to get next task: {next_result['error']}")
                 else:
-                    if st.button("Завершить тренировку", type="primary"):
-                        st.success("🎉 Training session completed!")
+                    if st.button(get_translation(finish_training_button, lang_idx), type="primary"):
+                        st.success(get_translation(training_completed, lang_idx))
                         st.session_state.current_training = None
                         st.session_state.current_task_index = 0
                         st.rerun()
         
         # Cancel session button
-        if st.button("Cancel Session"):
+        if st.button(get_translation(cancel_session_button, lang_idx)):
             st.session_state.current_training = None
             st.session_state.current_task_index = 0
             st.rerun()
 
 def statistics_page():
     """Display statistics page"""
-    st.subheader("📊 Learning Statistics")
+    lang_idx = get_user_interface_language()
+    st.subheader(get_translation(statistics_title, lang_idx))
     
     user_id = st.session_state.user_id
     learning_languages = st.session_state.user_data['learning_languages']
     
     # Language selection
-    selected_language = st.selectbox("Select Language", learning_languages, key="stats_language")
+    selected_language = st.selectbox(get_translation(select_language_label, lang_idx), learning_languages, key="stats_language")
     
     if selected_language:
         # Get statistics
@@ -522,18 +650,18 @@ def statistics_page():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.metric("Total Words", stats['total_words'])
+            st.metric(get_translation(total_words_label, lang_idx), stats['total_words'])
         
         with col2:
-            st.metric("Ready for Training", stats.get('words_ready_for_training', 0))
+            st.metric(get_translation(ready_for_training_label, lang_idx), stats.get('words_ready_for_training', 0))
         
         with col3:
-            st.metric("Recent Activity (7 days)", stats.get('recent_activity', 0))
+            st.metric(get_translation(recent_activity_label, lang_idx), stats.get('recent_activity', 0))
         
         # Progress distribution
         progress_dist = stats.get('progress_distribution', {})
         if progress_dist:
-            st.subheader("Progress Distribution")
+            st.subheader(get_translation(progress_distribution_label, lang_idx))
             progress_df = pd.DataFrame(
                 list(progress_dist.items()),
                 columns=['Progress Level', 'Count']
@@ -542,19 +670,139 @@ def statistics_page():
         
         # Common errors
         if errors:
-            st.subheader("Common Errors")
+            st.subheader(get_translation(common_errors_label, lang_idx))
             errors_df = pd.DataFrame(errors)
             errors_df = errors_df[['description', 'count']].head(10)
             errors_df.columns = ['Error Type', 'Count']
-            st.dataframe(errors_df, use_container_width=True)
+            st.dataframe(errors_df, width='stretch')
         else:
-            st.info("No errors recorded yet. Keep practicing!")
+            st.info(get_translation(no_errors_message, lang_idx))
+
+def settings_page():
+    """Display user settings page"""
+    lang_idx = get_user_interface_language()
+    st.subheader(get_translation(settings_title, lang_idx))
+    
+    # Get current user data
+    user_data = st.session_state.user_data
+    
+    with st.form("settings_form"):
+        st.markdown("### " + get_translation(learning_languages_settings, lang_idx))
+        current_learning_languages = user_data.get('learning_languages', [])
+        new_learning_languages = st.multiselect(
+            get_translation(learning_languages_settings, lang_idx),
+            list(SUPPORTED_LANGUAGES.keys()),
+            default=current_learning_languages,
+            key="settings_learning_languages"
+        )
+        
+        st.markdown("### " + get_translation(preferred_topics_settings, lang_idx))
+        current_topics = user_data.get('preferred_topics', [])
+        new_topics = st.multiselect(
+            get_translation(preferred_topics_settings, lang_idx),
+            PREFERRED_TOPICS,
+            default=current_topics,
+            key="settings_topics"
+        )
+        
+        st.markdown("### " + get_translation(interface_language_settings, lang_idx))
+        current_interface_language = user_data.get('interface_language', 'English')
+        new_interface_language = st.selectbox(
+            get_translation(interface_language_settings, lang_idx),
+            list(INTERFACE_LANGUAGES.keys()),
+            index=list(INTERFACE_LANGUAGES.keys()).index(current_interface_language) if current_interface_language in INTERFACE_LANGUAGES else 0,
+            key="settings_interface_language"
+        )
+        
+        # Save button
+        save_button = st.form_submit_button(get_translation(save_settings_button, lang_idx), type="primary")
+        
+        if save_button:
+            # Validate that at least one learning language is selected
+            if not new_learning_languages:
+                st.error(get_translation(error_select_language, lang_idx))
+            else:
+                try:
+                    # Update learning languages
+                    if new_learning_languages != current_learning_languages:
+                        success = db.update_user_languages(st.session_state.user_id, new_learning_languages)
+                        if success:
+                            st.session_state.user_data['learning_languages'] = new_learning_languages
+                        else:
+                            st.error(get_translation(settings_save_error, lang_idx))
+                            return
+                    
+                    # Update preferred topics
+                    if new_topics != current_topics:
+                        success = db.update_user_topics(st.session_state.user_id, new_topics)
+                        if success:
+                            st.session_state.user_data['preferred_topics'] = new_topics
+                        else:
+                            st.error(get_translation(settings_save_error, lang_idx))
+                            return
+                    
+                    # Update interface language
+                    if new_interface_language != current_interface_language:
+                        success = db.update_user_interface_language(st.session_state.user_id, new_interface_language)
+                        if success:
+                            st.session_state.user_data['interface_language'] = new_interface_language
+                            # Reload the page to apply new interface language
+                            st.success(get_translation(settings_saved_success, lang_idx))
+                            st.rerun()
+                        else:
+                            st.error(get_translation(settings_save_error, lang_idx))
+                            return
+                    
+                    # If we get here, all updates were successful
+                    st.success(get_translation(settings_saved_success, lang_idx))
+                    
+                except Exception as e:
+                    st.error(f"{get_translation(settings_save_error, lang_idx)}: {e}")
 
 # Main application logic
 def main():
     """Main application function"""
-    if not db or not ai or not validator or not training_engine:
-        st.error("Application services failed to initialize. Please check your configuration.")
+    if not db or not ai or not training_engine:
+        st.error("🚨 **Ошибка инициализации приложения**")
+        st.markdown("""
+        ### Не удалось инициализировать сервисы приложения
+        
+        **Возможные причины:**
+        1. **Отсутствуют переменные окружения** - проверьте файл `.env`
+        2. **Неправильные API ключи** - проверьте подключение к Supabase и OpenAI
+        
+        **Что нужно сделать:**
+        1. Откройте файл `.env` в корневой папке проекта
+        2. Замените заглушки на реальные значения:
+           - `SUPABASE_URL` - URL вашей базы данных Supabase
+           - `SUPABASE_KEY` - API ключ Supabase
+           - `OPENAI_API_KEY` - API ключ OpenAI
+        
+        **Пример файла .env:**
+        ```
+        SUPABASE_URL=https://your-project.supabase.co
+        SUPABASE_KEY=your_supabase_anon_key
+        OPENAI_API_KEY=sk-your_openai_api_key
+        ```
+        
+        После настройки перезапустите приложение.
+        """)
+        
+        st.markdown("---")
+        st.markdown("**Текущие переменные окружения:**")
+        try:
+            from config import SUPABASE_URL, SUPABASE_KEY, OPENAI_API_KEY
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.write(f"**SUPABASE_URL:** {'✅ Настроен' if SUPABASE_URL and SUPABASE_URL != 'your_supabase_url_here' else '❌ Не настроен'}")
+            with col2:
+                st.write(f"**SUPABASE_KEY:** {'✅ Настроен' if SUPABASE_KEY and SUPABASE_KEY != 'your_supabase_key_here' else '❌ Не настроен'}")
+            with col3:
+                st.write(f"**OPENAI_API_KEY:** {'✅ Настроен' if OPENAI_API_KEY and OPENAI_API_KEY != 'your_openai_api_key_here' else '❌ Не настроен'}")
+        except Exception as e:
+            st.error(f"Ошибка загрузки конфигурации: {e}")
+        
         return
     
     if not st.session_state.authenticated:

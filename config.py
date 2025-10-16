@@ -14,9 +14,6 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 # OpenAI Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# FastText API Configuration
-FASTTEXT_API_URL = os.getenv("FASTTEXT_API_URL")
-FASTTEXT_API_KEY = os.getenv("FASTTEXT_API_KEY")
 
 # Application Settings
 SESSION_DURATION_DAYS = 7
@@ -41,7 +38,7 @@ EBINGHAUS_INTERVALS = {
 
 # Task Type Probabilities by Progress Level
 TASK_PROBABILITIES = {
-    (0, 41): {"multiple_choice": 0.3, "fill_blank": 0.4, "translation": 0.3},
+    (0, 41): {"multiple_choice": 0.35, "fill_blank": 0.3, "translation": 0.35},
     (42, 70): {"multiple_choice": 0.2, "fill_blank": 0.3, "translation": 0.5},
     (71, 100): {"multiple_choice": 0.1, "fill_blank": 0.3, "translation": 0.6}
 }
@@ -54,6 +51,16 @@ SUPPORTED_LANGUAGES = {
     "Russian": "ru",
     "Ukrainian": "ua",
     "Italian": "it"
+}
+
+# Interface Languages (for UI translations)
+INTERFACE_LANGUAGES = {
+    "English": 0,
+    "Deutsch": 1, 
+    "Russian": 2,
+    "Español": 3,
+    "Ukrainian": 4,
+    "Italian": 5
 }
 
 # Preferred Topics

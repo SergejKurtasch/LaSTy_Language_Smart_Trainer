@@ -19,8 +19,10 @@ class DatabaseManager:
         if not SUPABASE_URL or not SUPABASE_KEY:
             raise ValueError("Supabase URL and Key must be provided")
         
-        # Create Supabase client
-        self.supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        try:
+            self.supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        except Exception as e:
+            raise e
     
     def _execute_with_retry(self, operation, max_retries=3, delay=1.0):
         """Execute database operation with retry logic"""
@@ -235,32 +237,35 @@ class DatabaseManager:
         if is_morphological_error:
             # Progress remains unchanged
             new_progress = current_progress
-            new_next_date = word["next_training_date"]
+            # Keep existing next_training_date (convert from string if needed)
+            existing_date = word["next_training_date"]
+            if isinstance(existing_date, str):
+                new_next_date = datetime.fromisoformat(existing_date).date()
+            else:
+                new_next_date = existing_date
         elif is_synonym:
             # Progress remains unchanged, but answer is accepted
             new_progress = current_progress
-            new_next_date = word["next_training_date"]
+            # Keep existing next_training_date (convert from string if needed)
+            existing_date = word["next_training_date"]
+            if isinstance(existing_date, str):
+                new_next_date = datetime.fromisoformat(existing_date).date()
+            else:
+                new_next_date = existing_date
         elif is_correct:
             # Increase progress
             new_progress = min(100, current_progress + PROGRESS_INCREMENT)
+            # Calculate new next training date
+            interval_days = 1  # Default
+            for (min_progress, max_progress), days in EBINGHAUS_INTERVALS.items():
+                if min_progress <= new_progress <= max_progress:
+                    interval_days = days
+                    break
+            new_next_date = today + timedelta(days=interval_days)
         else:
             # Decrease progress and repeat today
             new_progress = max(0, current_progress - PROGRESS_DECREMENT)
             new_next_date = today
-        
-        # Calculate next training date based on new progress
-        if not is_morphological_error and not is_synonym:
-            if is_correct:
-                # Find interval for new progress
-                interval_days = 1  # Default
-                for (min_progress, max_progress), days in EBINGHAUS_INTERVALS.items():
-                    if min_progress <= new_progress <= max_progress:
-                        interval_days = days
-                        break
-                new_next_date = today + timedelta(days=interval_days)
-            else:
-                # Repeat today for incorrect answers
-                new_next_date = today
         
         # Update database
         update_data = {
@@ -301,6 +306,35 @@ class DatabaseManager:
                 "count": 1
             }
             self.supabase.table("errors").insert(error_data).execute()
+    
+    def log_translation_errors(self, user_id: str, language: str, error_categories: List[str], 
+                             error_details: List[str], sentence_quality: str) -> None:
+        """Log detailed translation errors with categories"""
+        for i, (category, detail) in enumerate(zip(error_categories, error_details)):
+            # Include sentence quality in the description since we don't have separate columns
+            error_description = f"{category}: {detail} (Quality: {sentence_quality})"
+            
+            # Check if error already exists
+            existing = self.supabase.table("errors").select("*").eq(
+                "user_id", user_id
+            ).eq("language", language).eq("description", error_description).execute()
+            
+            if existing.data:
+                # Increment count
+                current_count = existing.data[0]["count"]
+                self.supabase.table("errors").update({
+                    "count": current_count + 1
+                }).eq("error_id", existing.data[0]["error_id"]).execute()
+            else:
+                # Create new error record (using only existing columns)
+                error_data = {
+                    "error_id": str(uuid.uuid4()),
+                    "user_id": user_id,
+                    "language": language,
+                    "description": error_description,
+                    "count": 1
+                }
+                self.supabase.table("errors").insert(error_data).execute()
     
     def get_user_errors(self, user_id: str, language: str = None) -> List[Dict]:
         """Get user error statistics"""
@@ -363,3 +397,36 @@ class DatabaseManager:
                 w["next_training_date"] and 
                 datetime.strptime(w["next_training_date"], "%Y-%m-%d").date() <= datetime.now().date()])
         }
+    
+    def update_user_languages(self, user_id: str, learning_languages: List[str]) -> bool:
+        """Update user's learning languages"""
+        try:
+            result = self.supabase.table("users").update({
+                "learning_languages": learning_languages
+            }).eq("user_id", user_id).execute()
+            return len(result.data) > 0
+        except Exception as e:
+            print(f"Error updating user languages: {e}")
+            return False
+    
+    def update_user_topics(self, user_id: str, preferred_topics: List[str]) -> bool:
+        """Update user's preferred topics"""
+        try:
+            result = self.supabase.table("users").update({
+                "preferred_topics": preferred_topics
+            }).eq("user_id", user_id).execute()
+            return len(result.data) > 0
+        except Exception as e:
+            print(f"Error updating user topics: {e}")
+            return False
+    
+    def update_user_interface_language(self, user_id: str, interface_language: str) -> bool:
+        """Update user's interface language"""
+        try:
+            result = self.supabase.table("users").update({
+                "interface_language": interface_language
+            }).eq("user_id", user_id).execute()
+            return len(result.data) > 0
+        except Exception as e:
+            print(f"Error updating interface language: {e}")
+            return False
